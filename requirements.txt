@@ -1,0 +1,15 @@
+# LFT Detector — Python dependencies for the inference bridge
+# (python/detect.py, python/normalize.py). Install into the SAME interpreter the
+# JavaFX app calls — the one on PATH as "python", or whatever LFT_PYTHON points to:
+#
+#   pip install -r requirements.txt
+#
+# Note: ultralytics transitively installs torch + torchvision, so the optional
+# MobileNetV3 classifier (python/classifier_mnv3.pt) works too once these are in.
+# The app runs fine WITHOUT that model, using the bundled YOLOv8-cls fallback
+# (python/classifier.pt).
+
+ultralytics>=8.1.0      # YOLOv8-OBB cassette localizer + YOLOv8-cls fallback classifier (pulls in torch/torchvision)
+opencv-python>=4.8.0    # cv2 — perspective crop, CLAHE, HSV line detection, image I/O
+Pillow>=10.0.0          # normalize.py — EXIF-strip / orientation normalization
+numpy>=1.24.0           # array math (also pulled in by the above; pinned for clarity)
