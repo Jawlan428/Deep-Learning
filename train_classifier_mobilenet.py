@@ -32,6 +32,10 @@ from sklearn.metrics import confusion_matrix, classification_report
 DATA_ROOT = Path(os.environ.get("CLASSIFIER_DATASET", "classifier_dataset"))
 OUT_MODEL = Path("python") / "classifier_mnv3.pt"
 
+# ---- Figures output (everything for the presentation lands here) ----
+FIG_DIR = Path(os.environ.get("FIG_DIR", "figures"))
+FIG_DIR.mkdir(parents=True, exist_ok=True)
+
 # ---- Hyperparameters ----
 IMG_SIZE = 224
 BATCH = 32
@@ -195,7 +199,13 @@ a2.plot(ep, history["train_acc"], label="train acc")
 a2.plot(ep, history["val_acc"], label="val acc")
 a2.axvline(EPOCHS_HEAD + 0.5, ls="--", c="gray", lw=1)
 a2.set_xlabel("epoch"); a2.set_ylabel("accuracy"); a2.set_title("Accuracy"); a2.legend()
-plt.tight_layout(); plt.show()
+plt.tight_layout()
+plt.savefig(FIG_DIR / "classifier_curves.png", dpi=200, bbox_inches="tight")
+print("Saved:", FIG_DIR / "classifier_curves.png")
+# Persist history so any curve can be re-plotted later without retraining.
+with open(FIG_DIR / "classifier_history.json", "w") as f:
+    json.dump(history, f, indent=2)
+plt.show()
 
 
 # %% [Confusion matrix + report on val]
@@ -215,9 +225,27 @@ plt.figure(figsize=(6, 5))
 sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",
             xticklabels=names_order, yticklabels=names_order)
 plt.xlabel("Predicted"); plt.ylabel("True"); plt.title("Confusion Matrix (val)")
-plt.tight_layout(); plt.show()
-print(classification_report(y_true, y_pred, labels=labels_order,
-                            target_names=names_order, digits=3, zero_division=0))
+plt.tight_layout()
+plt.savefig(FIG_DIR / "classifier_confusion_matrix.png", dpi=200, bbox_inches="tight")
+print("Saved:", FIG_DIR / "classifier_confusion_matrix.png")
+plt.show()
+
+# Normalized confusion matrix (row-wise) — nicer for slides with imbalanced classes.
+cm_norm = cm.astype(float) / cm.sum(axis=1, keepdims=True).clip(min=1)
+plt.figure(figsize=(6, 5))
+sns.heatmap(cm_norm, annot=True, fmt=".2f", cmap="Blues",
+            xticklabels=names_order, yticklabels=names_order, vmin=0, vmax=1)
+plt.xlabel("Predicted"); plt.ylabel("True"); plt.title("Confusion Matrix — normalized (val)")
+plt.tight_layout()
+plt.savefig(FIG_DIR / "classifier_confusion_matrix_normalized.png", dpi=200, bbox_inches="tight")
+plt.show()
+
+report = classification_report(y_true, y_pred, labels=labels_order,
+                               target_names=names_order, digits=3, zero_division=0)
+print(report)
+with open(FIG_DIR / "classifier_classification_report.txt", "w") as f:
+    f.write(report)
+print("Saved:", FIG_DIR / "classifier_classification_report.txt")
 
 
 # %% [Save model in a UI-loadable format]
@@ -289,6 +317,9 @@ if NEW_PHOTOS_DIR.exists():
         ax.axis("off")
     for ax in axes[len(files):]:
         ax.axis("off")
-    plt.tight_layout(); plt.show()
+    plt.tight_layout()
+    plt.savefig(FIG_DIR / "pipeline_predictions_newphotos.png", dpi=200, bbox_inches="tight")
+    print("Saved:", FIG_DIR / "pipeline_predictions_newphotos.png")
+    plt.show()
 else:
-    print("NEW_PHOTOS_DIR not found — set it to a folder of test 
+    print("NEW_PHOTOS_DIR not found — set it to a folder of test images to run the end-to-end pipeline figure.")
