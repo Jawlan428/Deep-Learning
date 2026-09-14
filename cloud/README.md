@@ -69,7 +69,19 @@ files got slightly larger, not smaller.**
 
 Ultralytics saves checkpoints in half precision; ONNX export writes float32, so
 the same 11.4M parameters take twice the bytes. The win is the **runtime**, not
-the weights.
+the weights — and it shows up in the container:
+
+| | Compressed (pushed) | On disk |
+|---|---|---|
+| This image | **230 MB** | 870 MB |
+| Equivalent torch + ultralytics image | ~700 MB | ~2 GB |
+
+Honest note: the original target was "under 500 MB", and by the uncompressed
+measure this misses it. 230 MB is what Cloud Run actually pulls; 870 MB is the
+on-disk footprint. Most of the remainder is `opencv-python-headless` and
+`onnxruntime`, which unpack to far more than their wheel sizes suggest.
+Stripping `__pycache__`, bundled test suites and `pip`/`setuptools` from the
+final stage would recover an estimated 150-250 MB; it has not been done.
 
 Ultralytics does OBB decoding, rotated NMS and corner conversion in Python
 *after* the model runs — none of it is in the exported graph (`end2end: False`).
