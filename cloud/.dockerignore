@@ -1,0 +1,49 @@
+# Everything here is excluded from the build context — the tarball Docker
+# sends to the daemon before building. A fat context makes every build slow
+# even when nothing changed, and anything sent can accidentally end up in the
+# image via a careless COPY.
+
+# Verification and experiment scripts: useful in the repo, dead weight in
+# the container. The service needs main.py, pipeline.py, obb_postprocess.py.
+export_onnx.py
+verify_stage1.py
+verify_obb.py
+verify_pipeline.py
+bench_detector.py
+diagnose_obb_gap.py
+preprocessing_experiment.py
+preprocessing_experiment2.py
+find_dataset.py
+
+# Windows helper scripts
+*.bat
+
+# Reports and generated JSON
+models/*.json
+!models/classifier_meta.json
+
+# Never ship credentials. The Dockerfile does not COPY them, but defence in
+# depth: if they are not in the context, a future careless `COPY . .` cannot
+# pick them up either.
+*.env
+.env*
+*.pem
+*.key
+*credentials*
+*service-account*
+gcp-key*.json
+
+# Python noise
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Git and IDE
+.git/
+.gitignore
+.idea/
+.vscode/
+
+# Docs
+*.md
