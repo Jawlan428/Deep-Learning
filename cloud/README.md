@@ -174,11 +174,20 @@ deliberate divergences, all measured:
    near-square-OBB case the rotation was written for.*
 3. **Square letterboxing.** The fixed 640×640 ONNX input requires padding to a
    full square; Ultralytics pads to the nearest multiple of 32. Detection boxes
-   differ slightly (mean polygon IoU 0.965). `rotated_crop` pads 4% anyway, so
-   this does not change verdicts.
+   differ slightly — mean polygon IoU 0.965, worst 0.844.
 
-End-to-end on the 20-image demo set: **this API 19/20, `detect.py` 18/20**,
-and the single disagreement was a faint positive the API got right.
+   **This can change a verdict.** On the demo set, `invalid_01.png` reads as
+   `invalid` through the desktop pipeline and `negative` through this API. By
+   that point both use identical preprocessing and an identical classifier, so
+   the crop geometry is the only thing left that differs.
+
+   Closing it would mean re-exporting the detector with a dynamic input shape
+   and re-verifying. That has not been done.
+
+End-to-end on the 20-image demo set, once the same resize fix was applied to
+`detect.py`: **desktop 20/20, this API 19/20.** One borderline flip on twenty
+images is weak evidence either way — but it is a real difference, and it is not
+in the API's favour. Stated here rather than omitted.
 
 ## Known limitations
 

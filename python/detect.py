@@ -62,6 +62,27 @@ LINE_MIN_SEPARATION_FRAC = 0.08  # two distinct C/T lines must be >=8% crop heig
 POSITIVE_DECISION_THRESHOLD = 0.40  # combined positive evidence (max of CNN/line) needed to call positive
 # CNN must have at least this confidence to override "0 lines detected → invalid" with "negative"
 CNN_OVERRIDE_INVALID_CONF = 0.65
+
+# ---- Classifier orientation sweep (see _classify_crop_torch) ----------------
+# This used to classify each crop at all FOUR 90-degree rotations and keep
+# whichever came back most confident, to survive near-square OBBs whose
+# orientation is ambiguous.
+#
+# Measured on the 81-image held-out set (cloud/preprocessing_experiment2.py),
+# with the resize bug below fixed:
+#       no rotation              0.9630
+#       4 rotations, max-conf    0.9259   <- the old behaviour
+#       4 rotations, mean-prob   0.9012
+#
+# Three of the four rotations are out-of-distribution, and out-of-distribution
+# inputs produce CONFIDENTLY WRONG softmax outputs — so "most confident wins"
+# tends to select whichever rotation fooled the model hardest.
+#
+# CAVEAT: that val set contains only correctly-oriented crops, so it cannot
+# test the ambiguous-OBB case the sweep was written for. _to_portrait() already
+# normalises orientation, so this is off by default. Set True to restore the
+# old behaviour if sideways crops ever show up in production.
+CLASSIFIER_ROTATION_SWEEP = False
 # ==================================================================================
 
 
@@ -186,38 +207,71 @@ def _to_portrait(crop_bgr):
 def _classify_crop_torch(crop_bgr, model, meta):
     """Classify a BGR crop with the MobileNet model.
 
-    Orientation-invariant: the crop is evaluated at all four 90-degree
-    rotations and the rotation with the highest top-class probability wins.
-    This removes the dependence on the crop coming out perfectly upright (the
-    near-square OBB ambiguity that otherwise flips the cassette sideways).
+    THE RESIZE GOES THROUGH PIL, NOT cv2. This is not a style choice — see the
+    note in _prep() below. It is worth ~12 points of accuracy on positives.
+
+    Orientation handling is controlled by CLASSIFIER_ROTATION_SWEEP (off by
+    default; see the constants block at the top of this file).
 
     Returns (label, conf, prob_map).
     """
     import torch
     import cv2 as _cv2
     import numpy as _np
+    from PIL import Image
 
     size = meta["img_size"]
     mean = _np.array(meta["mean"], dtype=_np.float32)
     std = _np.array(meta["std"], dtype=_np.float32)
     classes = meta["classes"]
 
-    rotations = [
-        crop_bgr,
-        _cv2.rotate(crop_bgr, _cv2.ROTATE_90_CLOCKWISE),
-        _cv2.rotate(crop_bgr, _cv2.ROTATE_180),
-        _cv2.rotate(crop_bgr, _cv2.ROTATE_90_COUNTERCLOCKWISE),
-    ]
+    def _prep(bgr):
+        """BGR crop -> normalized CHW tensor, resized exactly as TRAINING did.
+
+        train_classifier_mobilenet.py validated with torchvision's eval_tf,
+        which resizes a PIL image. PIL's resize is area-averaged
+        (antialiased): shrinking a 1000px crop to 224px lets every source
+        pixel contribute.
+
+        cv2.resize(..., INTER_LINEAR) does NOT antialias. On a large downscale
+        it samples a 2x2 neighbourhood per output pixel and discards
+        everything between. A faint LFT test line is a thin, low-contrast,
+        near-horizontal feature — exactly what that erases. The line was gone
+        before the network ever saw it, so "negative" was a correct answer to
+        the wrong image.
+
+        Measured on the 81-image held-out set
+        (cloud/preprocessing_experiment.py):
+
+            PIL resize (as validated)   0.9630   60/60 positives found
+            cv2.INTER_LINEAR (old)      0.8395   48/60 positives found
+            cv2.INTER_AREA              0.9383   59/60 positives found
+
+        This also means the classical line-counting layer below is no longer
+        rescuing positives the CNN misses — it was compensating for this bug.
+        It remains useful as an independent second opinion, but do not
+        describe it as covering a model weakness.
+        """
+        rgb = _cv2.cvtColor(bgr, _cv2.COLOR_BGR2RGB)
+        pil = Image.fromarray(rgb).resize((size, size), Image.BILINEAR)
+        arr = _np.asarray(pil, dtype=_np.float32) / 255.0
+        arr = (arr - mean) / std
+        return torch.from_numpy(arr.transpose(2, 0, 1)).unsqueeze(0).float()
+
+    if CLASSIFIER_ROTATION_SWEEP:
+        views = [
+            crop_bgr,
+            _cv2.rotate(crop_bgr, _cv2.ROTATE_90_CLOCKWISE),
+            _cv2.rotate(crop_bgr, _cv2.ROTATE_180),
+            _cv2.rotate(crop_bgr, _cv2.ROTATE_90_COUNTERCLOCKWISE),
+        ]
+    else:
+        views = [crop_bgr]
 
     best = None  # (top_conf, probs_array)
-    for rot in rotations:
-        rgb = _cv2.cvtColor(rot, _cv2.COLOR_BGR2RGB)
-        rgb = _cv2.resize(rgb, (size, size), interpolation=_cv2.INTER_LINEAR)
-        arr = rgb.astype(_np.float32) / 255.0
-        arr = (arr - mean) / std
-        tensor = torch.from_numpy(arr.transpose(2, 0, 1)).unsqueeze(0).float()
+    for view in views:
         with torch.no_grad():
-            probs = torch.softmax(model(tensor), dim=1)[0].cpu().numpy()
+            probs = torch.softmax(model(_prep(view)), dim=1)[0].cpu().numpy()
         top_conf = float(probs.max())
         if best is None or top_conf > best[0]:
             best = (top_conf, probs)
