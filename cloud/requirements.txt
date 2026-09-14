@@ -1,0 +1,24 @@
+# Runtime dependencies for the LFT Reader API container.
+#
+# Note what is NOT here: torch, torchvision, ultralytics.
+# That is the entire point of the ONNX export. Those three pull ~2 GB into an
+# image; onnxruntime is a ~15 MB wheel that executes the same frozen graphs.
+#
+# Pinned rather than floating: a container that silently changes its numeric
+# behaviour on rebuild is not reproducible, and "it worked last week" is not a
+# debugging strategy.
+
+fastapi==0.115.6           # web framework; generates the OpenAPI docs
+uvicorn[standard]==0.34.0  # ASGI server that actually runs it
+python-multipart==0.0.20   # required for multipart file uploads
+
+onnxruntime==1.20.1        # runs detector.onnx + classifier.onnx on CPU
+numpy==2.2.1               # array maths, OBB decode, NMS
+Pillow==11.1.0             # image decode, EXIF orientation, classifier resize
+
+# opencv-python-headless, NOT opencv-python.
+# The regular package links GUI libraries (libGL, GTK) for cv2.imshow, which
+# no server will ever call. Headless drops them and ~200 MB of the image,
+# and avoids "ImportError: libGL.so.1" — the single most common OpenCV-in-
+# Docker failure.
+opencv-python-headless==4.10.0.84
