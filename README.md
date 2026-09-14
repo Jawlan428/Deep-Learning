@@ -5,6 +5,36 @@ COVID-19 lateral flow test images. Browse a folder, navigate with prev/next, hit
 **Detect** to see the oriented bounding box and a side panel with class,
 confidence, rotation, and box size.
 
+## Live web API
+
+The same two-stage pipeline also runs as a public HTTP API on Google Cloud Run —
+no install, no Java, no Python, just a URL:
+
+**https://lft-reader-xufdqxj7ja-uc.a.run.app**
+
+```bash
+curl -X POST -F "file=@your_photo.jpg" \
+  https://lft-reader-xufdqxj7ja-uc.a.run.app/predict
+```
+
+```json
+{"detected": true, "result": "positive", "confidence": 0.9811,
+ "decision_source": "cnn+lines agree (positive)", "processing_ms": 523.3}
+```
+
+> Send a photo of a test, **not** an already-cropped cassette — the detector
+> looks for the cassette *within a scene*. The first request after ~15 minutes
+> of inactivity takes a few seconds while the container starts.
+
+Both models are exported to ONNX so the container runs without PyTorch
+(230 MB compressed instead of roughly 2 GB), and the Ultralytics OBB
+postprocessing — decode, rotated NMS, geometry — is reimplemented in NumPy.
+Deployment steps, measured benchmarks, and the train/inference preprocessing
+bug this work uncovered are documented in
+**[`cloud/README.md`](cloud/README.md)**.
+
+Research and demonstration use only. **Not a medical device.**
+
 ## Screenshots
 
 Screenshots live in [`docs/screenshots/`](docs/screenshots). Drop your own PNGs
@@ -28,6 +58,12 @@ lft-detector-ui/
 ├── best.pt                          ← put your trained model here
 ├── python/
 │   └── detect.py                    ← inference bridge (runs in subprocess)
+├── cloud/                           ← the web API (see cloud/README.md)
+│   ├── main.py                      ← FastAPI app
+│   ├── pipeline.py                  ← detect → crop → classify → fuse
+│   ├── obb_postprocess.py           ← OBB decode + rotated NMS, NumPy only
+│   ├── export_onnx.py               ← PyTorch → ONNX, with parity checks
+│   └── Dockerfile                   ← slim container, no PyTorch
 └── src/main/
     ├── java/com/lftdetector/
     │   ├── LFTDetectorApp.java      ← main UI
